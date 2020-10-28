@@ -10,6 +10,7 @@
 #import "offsetof.h"
 #import "offsets.h"
 #import "amfi_utils.h"
+#import "IOKitLib.h"
 #import "osobject.h"
 #import "kernelSymbolFinder.h"
 #import "cs_blob.h"
@@ -24,12 +25,21 @@
 #import <sys/attr.h>
 
 //---stuff---//
+#import <mach-o/fat.h>
+#import <mach-o/loader.h>
+#import <mach-o/nlist.h>
+#import <mach/mach.h>
 #import <mach/mach.h>
 #import <sys/types.h>
+#import <CommonCrypto/CommonCrypto.h>
 #import <CommonCrypto/CommonDigest.h>
+#include <compression.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
 
 //---Obj-c stuff---//
 #import <Foundation/Foundation.h>
+#import <CoreFoundation/CoreFoundation.h>
 
 
 typedef int (*kexecFunc)(uint64_t function, size_t argument_count, ...);

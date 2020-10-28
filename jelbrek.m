@@ -6,6 +6,94 @@ uint64_t KernelBase;
 mach_port_t TFP0;
 NSString *newPath;
 
+#define BOOT_PATH "/System/Library/Caches/com.apple.kernelcaches/kernelcache"
+#define PREBOOT_PATH "/private/preboot/"
+
+typedef uint64_t kaddr_t;
+typedef mach_port_t io_object_t;
+typedef uint32_t ipc_entry_num_t;
+typedef io_object_t io_service_t, io_connect_t, io_registry_entry_t;
+
+kern_return_t
+IORegistryEntrySetCFProperty(io_registry_entry_t, CFStringRef, CFTypeRef);
+
+// Creds go to Halo-Michael for this one :)
+
+static int
+sha1_to_str(const unsigned char *hash, size_t hashlen, char *buf, size_t buflen) {
+    if (buflen < (hashlen * 2 + 1)) {
+        return -1;
+    }
+
+    size_t i;
+    for (i = 0; i < hashlen; i++) {
+        sprintf(buf + i * 2, "%02X", hash[i]);
+    }
+    buf[i * 2] = 0;
+    return ERR_SUCCESS;
+}
+
+static char *
+get_boot_path(void) {
+    size_t hash_len, path_len = sizeof(BOOT_PATH);
+    char *path = NULL;
+
+    if(access(BOOT_PATH, F_OK) != 0) {
+        io_registry_entry_t chosen = IORegistryEntryFromPath(kIOMasterPortDefault, "IODeviceTree:/chosen");
+
+        if (!MACH_PORT_VALID(chosen)) {
+            printf("Unable to get IODeviceTree:/chosen port\n");
+            return NULL;
+        }
+
+        CFDataRef hash = (CFDataRef)IORegistryEntryCreateCFProperty(chosen, CFSTR("boot-manifest-hash"), kCFAllocatorDefault, 0);
+
+        IOObjectRelease(chosen);
+
+        if (hash == nil) {
+            fprintf(stderr, "Unable to read boot-manifest-hash\n");
+            return NULL;
+        }
+
+        if (CFGetTypeID(hash) != CFDataGetTypeID()) {
+            fprintf(stderr, "Error hash is not data type\n");
+            CFRelease(hash);
+            return NULL;
+        }
+
+        // Make a hex string out of the hash
+
+        hash_len = (size_t)CFDataGetLength(hash) * 2;
+        char *manifestHash = (char*)calloc(hash_len + 1, sizeof(char));
+
+        int ret = sha1_to_str(CFDataGetBytePtr(hash), (size_t)CFDataGetLength(hash), manifestHash, hash_len + 1);
+
+        CFRelease(hash);
+
+        if (ret != ERR_SUCCESS) {
+            printf("Unable to generate bootHash string\n");
+            free(manifestHash);
+            return NULL;
+        }
+
+        path_len += strlen(PREBOOT_PATH) + hash_len;
+        if((path = malloc(path_len)) != NULL) {
+            strcpy(path, PREBOOT_PATH);
+            strcpy(path + strlen(PREBOOT_PATH), manifestHash);
+        }
+        free(manifestHash);
+    }
+    if(path == NULL) {
+        path_len = sizeof(BOOT_PATH);
+        path = malloc(path_len);
+    }
+    if(path != NULL) {
+        memcpy(path + (path_len - sizeof(BOOT_PATH)), BOOT_PATH, sizeof(BOOT_PATH));
+    }
+    return path;
+}
+
+
 int init_jelbrek(mach_port_t tfpzero) {
     @autoreleasepool {
         printf("[*] Initializing jelbrekLib\n");
@@ -56,7 +144,10 @@ int init_jelbrek(mach_port_t tfpzero) {
         printf("[*] copying to %s\n", [newPath UTF8String]);
         
         // create a copy to be safe
-        [fileManager copyItemAtPath:@"/System/Library/Caches/com.apple.kernelcaches/kernelcache" toPath:newPath error:&error];
+        NSString *kpath = [NSString stringWithFormat:@"%s", get_boot_path()];
+        printf("[*] Got kernel path %s\n", [kpath UTF8String]);
+        NSString *kernelPath = [NSString stringWithFormat:@"%@", kpath];
+        [fileManager copyItemAtPath:kernelPath toPath:newPath error:&error];
         if (error) {
             printf("[-] Failed to copy kernelcache with error: %s\n", [[error localizedDescription] UTF8String]);
             return 4;
@@ -121,7 +212,10 @@ int init_with_kbase(mach_port_t tfpzero, uint64_t kernelBase, kexecFunc kexec) {
         printf("[*] copying to %s\n", [newPath UTF8String]);
         
         // create a copy to be safe
-        [fileManager copyItemAtPath:@"/System/Library/Caches/com.apple.kernelcaches/kernelcache" toPath:newPath error:&error];
+        NSString *kpath = [NSString stringWithFormat:@"%s", get_boot_path()];
+        printf("[*] Got kernel path %s\n", [kpath UTF8String]);
+        NSString *kernelPath = [NSString stringWithFormat:@"%@", kpath];
+        [fileManager copyItemAtPath:kernelPath toPath:newPath error:&error];
         if (error) {
             printf("[-] Failed to copy kernelcache with error: %s\n", [[error localizedDescription] UTF8String]);
             return 4;
