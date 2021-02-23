@@ -10,7 +10,7 @@
 #import "offsetof.h"
 #import "offsets.h"
 #import "amfi_utils.h"
-#import "IOKitLib.h"
+#import "IOKit/IOKitLib.h"
 #import "osobject.h"
 #import "kernelSymbolFinder.h"
 #import "cs_blob.h"
